@@ -1,13 +1,67 @@
 (ns interface-treino.views
   (:require
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [re-frame.core :as re-frame]
+   [interface-treino.subs :as subs]
+   [interface-treino.routes :as routes]))
 
 (def estado (r/atom :inicial))
 (def nome-exercicio (r/atom ""))
 (def data (r/atom ""))
 (def series (r/atom [{:serie "" :repeticao "" :peso ""}]))
 
-(defn main-panel []
+;; Estado do formulário de Exercício
+(def exercicio-nome (r/atom ""))
+(def exercicio-categoria (r/atom ""))
+
+;; Estado para dropdown de exercícios
+(def exercicios-disponiveis (r/atom []))
+(def exercicio-selecionado (r/atom ""))
+
+(defn- carregar-exercicios! []
+  "Carrega lista de exercícios do endpoint /exercicios"
+  (-> (js/fetch "http://localhost:8080/exercicios"
+        (clj->js {:method "GET"
+                  :headers {"Content-Type" "application/json"}}))
+      (.then (fn [resp]
+               (if (.-ok resp)
+                 (.text resp)
+                 (throw (js/Error. (str "Erro HTTP: " (.-status resp)))))))
+      (.then (fn [text]
+               (js/console.log "Resposta da API:" text)
+               (js/console.log "Primeiros 50 caracteres:" (.substring text 0 50))
+               (try
+                 (let [data (.parse js/JSON text)
+                       exercicios (js->clj data :keywordize-keys true)]
+                   (reset! exercicios-disponiveis exercicios)
+                   (js/console.log "Exercícios carregados:" exercicios))
+                 (catch js/Error e
+                   (js/console.error "Erro no parse JSON:" e)
+                   (js/alert (str "Formato inválido: " (.substring text 0 100)))))))
+      (.catch (fn [err]
+                (js/console.error "Erro ao carregar exercícios:" err)
+                (js/alert (str "Erro ao carregar exercícios: " err))))))
+
+(defn- submit-exercicio! []
+  (let [payload {:nome @exercicio-nome
+                 :categoria @exercicio-categoria}]
+    (-> (js/fetch "http://localhost:8080/create-exercicio"
+          (clj->js {:method "POST"
+                    :headers {"Content-Type" "application/json"}
+                    :body (.stringify js/JSON (clj->js payload))}))
+        (.then (fn [resp]
+                 (if (.-ok resp)
+                   (do
+                     (reset! exercicio-nome "")
+                     (reset! exercicio-categoria "")
+                     (js/alert "Exercício cadastrado com sucesso!")
+                     ;; Recarregar lista após cadastrar
+                     (carregar-exercicios!))
+                   (js/alert (str "Erro ao cadastrar: " (.-status resp))))))
+        (.catch (fn [err]
+                  (js/alert (str "Falha de rede: " err)))))))
+
+(defn cadastro-panel []
   [:div {:style {:background-color "white"
                  :height "100vh"
                  :display "flex"
@@ -54,6 +108,7 @@
                          :font-size "14px"}
                  :on-click #(do
                               (js/console.log "Clicou em Adicionar Exercício")
+                              (carregar-exercicios!)
                               (reset! estado :exercicio))}
         "Adicionar Exercício"]]
       
@@ -63,21 +118,24 @@
                      :display "flex"
                      :flex-direction "column"
                      :gap "20px"}}
-       ; Nome Exercício
+       ; Nome Exercício (Dropdown)
        [:div
         [:label {:style {:display "block" 
                          :margin-bottom "5px"
                          :font-size "14px"
                          :color "black"}} 
          "Nome Exercício"]
-        [:input {:type "text"
-                 :value @nome-exercicio
-                 :on-change #(reset! nome-exercicio (-> % .-target .-value))
-                 :style {:width "100%"
-                         :padding "8px"
-                         :border "1px solid #000"
-                         :border-radius "3px"
-                         :font-size "14px"}}]]
+        [:select {:value @exercicio-selecionado
+                  :on-change #(reset! exercicio-selecionado (-> % .-target .-value))
+                  :style {:width "100%"
+                          :padding "8px"
+                          :border "1px solid #000"
+                          :border-radius "3px"
+                          :font-size "14px"}}
+         [:option {:value ""} "Selecione um exercício..."]
+         (for [exercicio @exercicios-disponiveis]
+           ^{:key (:nome-interno exercicio)}
+           [:option {:value (:nome-interno exercicio)} (:nome exercicio)])]]
        
        ; Data
        [:div
@@ -117,21 +175,24 @@
                      :display "flex"
                      :flex-direction "column"
                      :gap "15px"}}
-       ; Nome Exercício
+       ; Nome Exercício (Dropdown)
        [:div
         [:label {:style {:display "block" 
                          :margin-bottom "5px"
                          :font-size "14px"
                          :color "black"}} 
          "Nome Exercício"]
-        [:input {:type "text"
-                 :value @nome-exercicio
-                 :on-change #(reset! nome-exercicio (-> % .-target .-value))
-                 :style {:width "100%"
-                         :padding "8px"
-                         :border "1px solid #000"
-                         :border-radius "3px"
-                         :font-size "14px"}}]]
+        [:select {:value @exercicio-selecionado
+                  :on-change #(reset! exercicio-selecionado (-> % .-target .-value))
+                  :style {:width "100%"
+                          :padding "8px"
+                          :border "1px solid #000"
+                          :border-radius "3px"
+                          :font-size "14px"}}
+         [:option {:value ""} "Selecione um exercício..."]
+         (for [exercicio @exercicios-disponiveis]
+           ^{:key (:nome-interno exercicio)}
+           [:option {:value (:nome-interno exercicio)} (:nome exercicio)])]]
        
        ; Data
        [:div
@@ -244,8 +305,85 @@
                           :font-size "14px"
                           :font-weight "bold"}
                   :on-click #(js/alert (str "Treino Cadastrado!\n"
-                                           "Exercício: " @nome-exercicio "\n"
+                                           "Exercício (nome-interno): " @exercicio-selecionado "\n"
                                            "Data: " @data "\n"
                                            "Séries: " (count @series) "\n"
                                            "Detalhes: " (pr-str @series)))}
          "Cadastrar"]]])]])
+
+(defn exercicio-panel []
+  [:div {:style {:background-color "white"
+                 :height "100vh"
+                 :display "flex"
+                 :flex-direction "column"
+                 :justify-content "center"
+                 :align-items "center"
+                 :padding "20px"}}
+   [:div {:style {:width "400px"
+                  :padding "40px"
+                  :border "2px solid #000"
+                  :border-radius "30px"
+                  :background-color "white"
+                  :display "flex"
+                  :flex-direction "column"
+                  :align-items "stretch"
+                  :gap "20px"}}
+    [:h1 {:style {:color "black"
+                  :font-size "1.8rem"
+                  :font-weight "bold"
+                  :text-align "center"
+                  :margin 0}}
+     "Cadastro Exercício"]
+    [:div
+     [:label {:style {:display "block"
+                      :margin-bottom "5px"
+                      :font-size "14px"
+                      :color "black"}}
+      "Nome"]
+     [:input {:type "text"
+              :value @exercicio-nome
+              :on-change #(reset! exercicio-nome (-> % .-target .-value))
+              :style {:width "100%"
+                      :padding "8px"
+                      :border "1px solid #000"
+                      :border-radius "3px"
+                      :font-size "14px"}}]]
+    [:div
+     [:label {:style {:display "block"
+                      :margin-bottom "5px"
+                      :font-size "14px"
+                      :color "black"}}
+      "Categoria"]
+     [:input {:type "text"
+              :value @exercicio-categoria
+              :on-change #(reset! exercicio-categoria (-> % .-target .-value))
+              :style {:width "100%"
+                      :padding "8px"
+                      :border "1px solid #000"
+                      :border-radius "3px"
+                      :font-size "14px"}}]]
+    [:button {:style {:padding "12px 24px"
+                      :border "1px solid #000"
+                      :border-radius "5px"
+                      :background-color "#007bff"
+                      :color "white"
+                      :cursor "pointer"
+                      :font-size "14px"
+                      :font-weight "bold"}
+              :on-click submit-exercicio!}
+     "Cadastrar Exercício"]]])
+
+(defmethod routes/panels :cadastro-panel []
+  [cadastro-panel])
+
+(defmethod routes/panels :exercicio-panel []
+  [exercicio-panel])
+
+(defn main-panel []
+  (let [active-panel (re-frame/subscribe [::subs/active-panel])]
+    (js/console.log "Active panel:" @active-panel)
+    (if @active-panel
+      (routes/panels @active-panel)
+      [:div {:style {:padding "20px" :text-align "center"}}
+       [:h2 "Carregando..."]
+       [:p "Aguarde enquanto a aplicação inicializa"]])))

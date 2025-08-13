@@ -1,8 +1,11 @@
 (ns interface-treino.core
   (:require
    [reagent.dom :as rdom]
+   [re-frame.core :as re-frame]
    [interface-treino.views :as views]
-   [interface-treino.config :as config]))
+   [interface-treino.config :as config]
+   [interface-treino.events :as events]
+   [interface-treino.routes :as routes]))
 
 (defn dev-setup []
   (when config/debug?
@@ -15,4 +18,6 @@
 
 (defn init []
   (dev-setup)
+  (re-frame/dispatch [::events/initialize-db])
+  (routes/start!)
   (mount-root))

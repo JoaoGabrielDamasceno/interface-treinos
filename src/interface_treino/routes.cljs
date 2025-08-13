@@ -6,12 +6,17 @@
    [interface-treino.events :as events]))
 
 (defmulti panels identity)
-(defmethod panels :default [] [:div "No panel found for this route."])
+(defmethod panels :default [panel] 
+  [:div {:style {:padding "20px" :text-align "center"}}
+   [:h2 "Painel não encontrado"]
+   [:p (str "Painel solicitado: " panel)]
+   [:a {:href "/"} "Voltar ao início"]])
 
 (def routes
   (atom
-    ["/" {""      :cadastro
-          "about" :about}]))
+    ["/" {""          :cadastro
+          "about"     :about
+          "exercicio" :exercicio}]))
 
 (defn parse
   [url]
